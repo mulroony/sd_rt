@@ -5,6 +5,7 @@ region_url: https://covidtracking.com/api/v1/states/daily.csv
 dates_to_do: 
 
 regions_to_do:
+  - CA
 
 region_field: state
 

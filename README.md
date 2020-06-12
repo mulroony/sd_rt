@@ -13,4 +13,4 @@ docker run -v `pwd`/outputs:/covid/outputs -v `pwd`/inputs:/covid/inputs -it sd_
 
  Will generate XLSX file with a sheet per zip code
 
-#### Had to change some code from k-sys/covid-19 package. Has not been tested. Do not trust results
+#### Had to change some code from k-sys/covid-19 package.
