@@ -175,10 +175,14 @@ print("Setup config...")
 #####################
 config = {}
 config['dates_to_do'] = []
-config['zipcodes_to_do'] = []
-config['zip_url'] = 'https://opendata.arcgis.com/datasets/854d7e48e3dc451aa93b9daf82789089_0.csv'
-config['output_path'] = '/covid/outputs/sd_zip_rt.xlsx'
+config['regions_to_do'] = []
+config['region_url'] = 'https://opendata.arcgis.com/datasets/854d7e48e3dc451aa93b9daf82789089_0.csv'
+config['output_path'] = '/covid/outputs/sd_region_rt.xlsx'
 config['patient_path'] = '/covid/inputs/patients.20200611.csv'
+
+config['region_field'] = ''
+config['date_field'] = ''
+config['positive_field'] = ''
 #####################
 
 print("    - done\n==================================")
@@ -195,9 +199,9 @@ if config['dates_to_do']:
 else:
     config['dates_to_do'] = pd.to_datetime([])
 
-# Zip codes need to be integers
-if config['zipcodes_to_do']:
-    config['zipcodes_to_do'] = [int(x) for x in config['zipcodes_to_do'] ]
+# Regions need to be strings
+if config['regions_to_do']:
+    config['regions_to_do'] = [str(x) for x in config['regions_to_do'] ]
 
 
 print("    - done\n==================================")
@@ -208,28 +212,31 @@ pprint.pprint(config)
 print("\n==================================")
 print("Reading remote CSV...")
 
-zips = pd.read_csv(config['zip_url'])
+regions = pd.read_csv(config['region_url'], 
+                      parse_dates=[config['date_field']])
 
 print("    - done\n==================================")
 print("Clean up dataframe...")
 
-zips['date'] = zips['updatedate'].apply(lambda x: pd.to_datetime(x.split(" ")[0]))
+# Rename given fields 
+regions.rename(columns={config['region_field']: 'region', config['positive_field']: 'positive', config['date_field']: 'date'}, inplace=True)
 
-zips.drop(inplace=True, columns=['X',
-                                 'Y',
-                                 'FID',
-                                 'zipcode_zip',
-                                 'created_date',
-                                 'updatedate',
-                                 'created_date', 
-                                 'created_user', 
-                                 'last_edited_date', 
-                                 'last_edited_user',
-                                 'globalid'])
+# Remove unused fields
+for column in regions.columns:
+    if column in ['date', 'region', 'positive']:
+        continue
+    regions.drop(inplace=True, columns=[column])
 
-zips.rename(columns={'ziptext': 'zipcode','case_count': 'positive'}, inplace=True)
+# Convert timestamps to just dates
+regions['date'] = regions['date'].dt.date
 
-zips = zips.set_index(['zipcode', 'date']).sort_index()
+# Make sure region names are strings
+regions['region'] = regions['region'].apply(str)
+
+# Remove any possible duplicates
+regions.drop_duplicates(inplace=True)
+
+regions = regions.set_index(['region', 'date']).sort_index()
 
 print("    - done\n==================================")
 print("Reading patient CSV...")
@@ -250,29 +257,29 @@ p_delay = p_delay.reindex(new_range, fill_value=0)
 p_delay /= p_delay.sum()
 
 print("    - done\n==================================")
-print("Running Model code for each zip, this takes a while...\n")
+print("Running Model code for each region, this takes a while...\n")
 
 models = {}
 
-for zipcode, grp in zips.groupby('zipcode'):
+for region, grp in regions.groupby('region'):
    
-    # Skip zipcodes not in config
-    if config['zipcodes_to_do'] and zipcode not in config['zipcodes_to_do']:
-        print(f'    - Skipping {zipcode}, not in list to do')
+    # Skip regions not in config
+    if config['regions_to_do'] and region not in config['regions_to_do']:
+        print(f'    - Skipping {region}, not in list to do')
         continue
  
-    print(zipcode)
-    if zipcode in models:
-        print(f'    - Skipping {zipcode}, already in cache')
+    print(region)
+    if region in models:
+        print(f'    - Skipping {region}, already in cache')
         continue
     
-    if zips.loc[zipcode].isnull().all().bool():
-        print(f'    - Skipping {zipcode}, all values null')
+    if regions.loc[region].isnull().all().bool():
+        print(f'    - Skipping {region}, all values null')
         continue
    
-    print(f'    - {zipcode}....')
+    print(f'    - {region}....')
     try: 
-        models[zipcode] = create_and_run_model(zipcode, grp.droplevel(0))
+        models[region] = create_and_run_model(region, grp.droplevel(0))
     except:
         print(f'!!ERROR - Model code failed, skipping...')
 
@@ -289,10 +296,10 @@ if divergences[has_divergences].empty:
 else:
     print('Found divergences... they will rerun now')
 
-# Rerun zipcodes with divergences
-for zipcode, n_divergences in divergences[has_divergences].items():
-    print(f'    - Running {zipcode} again due to divergence')
-    models[zipcode].run()
+# Rerun regions with divergences
+for region, n_divergences in divergences[has_divergences].items():
+    print(f'    - Running {region} again due to divergence')
+    models[region].run()
 
 print("    - done\n==================================")
 print("Converting results to dataframe")
@@ -301,7 +308,7 @@ results = None
 
 
 print("Converting model results to dataframe")
-for zipcode, model in models.items():
+for region, model in models.items():
 
     df = df_from_model(model)
 

@@ -3,11 +3,8 @@ output_path: /covid/outputs/sd_zip_rt.xlsx
 region_url: https://opendata.arcgis.com/datasets/854d7e48e3dc451aa93b9daf82789089_0.csv
 
 dates_to_do: 
-  - 2020.05.01
-  - 2020.05.02
 
 regions_to_do:
-  - 92109
 
 region_field: ziptext
 

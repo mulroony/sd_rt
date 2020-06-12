@@ -1,0 +1,14 @@
+output_path: /covid/outputs/ct_states_rt.xlsx
+
+region_url: https://covidtracking.com/api/v1/states/daily.csv
+
+dates_to_do: 
+
+regions_to_do:
+
+region_field: state
+
+date_field: date
+
+positive_field: positive
+
