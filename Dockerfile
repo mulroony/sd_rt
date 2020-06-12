@@ -2,8 +2,8 @@ FROM python:3.7.7-stretch
 
 RUN pip install pymc3 requests openpyxl pyyaml
 
-RUN mkdir -p /covid/inputs /covid/ && chmod -R 777 /covid
+RUN mkdir -p /covid/ /covid/ && chmod -R 777 /covid
 
-ADD ./* /covid/inputs/
+ADD sd_zip_rt.py /covid/
 
-CMD ["python","/covid/inputs/sd_zip_rt.py"]
+CMD ["python","/covid/sd_zip_rt.py"]

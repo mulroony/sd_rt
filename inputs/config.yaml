@@ -1,0 +1,7 @@
+output_path: /covid/outputs/sd_zip_rt.xlsx
+
+zip_url: https://opendata.arcgis.com/datasets/854d7e48e3dc451aa93b9daf82789089_0.csv
+
+dates_to_do: 
+
+zipcodes_to_do:

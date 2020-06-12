@@ -1,3 +1,5 @@
+print("Staring up....\n\n")
+print("Loading libraries...")
 import warnings
 warnings.simplefilter(action='ignore', category=FutureWarning)
 
@@ -12,40 +14,16 @@ import theano.tensor as tt
 from datetime import date
 from datetime import datetime
 
-url = 'https://opendata.arcgis.com/datasets/854d7e48e3dc451aa93b9daf82789089_0.csv'
-zips = pd.read_csv(url)
+# Quiet pymc3
+import logging
+logger = logging.getLogger('pymc3')
+logger.setLevel(logging.ERROR)
 
-zips['date'] = zips['updatedate'].apply(lambda x: pd.to_datetime(x.split(" ")[0]))
+import yaml
+import pprint
 
-zips.drop(inplace=True, columns=['X',
-                                 'Y',
-                                 'FID',
-                                 'zipcode_zip',
-                                 'created_date',
-                                 'updatedate',
-                                 'created_date', 
-                                 'created_user', 
-                                 'last_edited_date', 
-                                 'last_edited_user',
-                                 'globalid'])
-
-zips.rename(columns={'ziptext': 'zipcode','case_count': 'positive'}, inplace=True)
-
-zips = zips.set_index(['zipcode', 'date']).sort_index()
-
-patients = pd.read_csv('/covid/inputs/patients.20200611.csv',
-                       parse_dates=['Onset', 'Confirmed'],
-                       low_memory=False)
-
-
-# Calculate the delta in days between onset and confirmation
-delay = (patients.Confirmed - patients.Onset).dt.days
-
-# Convert samples to an empirical distribution
-p_delay = delay.value_counts().sort_index()
-new_range = np.arange(0, p_delay.index.max()+1)
-p_delay = p_delay.reindex(new_range, fill_value=0)
-p_delay /= p_delay.sum()
+print("    - done\n==================================")
+print("Setup some functions and classes...")
 
 def confirmed_to_onset(confirmed, p_delay):
 
@@ -189,38 +167,135 @@ def create_and_run_model(name, state):
     adjusted, cumulative_p_delay = adjust_onset_for_right_censorship(onset, p_delay)
     return MCMCModel(name, onset, cumulative_p_delay).run()
 
+print("    - done\n==================================")
+print("Setup config...")
+
+#####################
+# Defaults
+#####################
+config = {}
+config['dates_to_do'] = []
+config['zipcodes_to_do'] = []
+config['zip_url'] = 'https://opendata.arcgis.com/datasets/854d7e48e3dc451aa93b9daf82789089_0.csv'
+config['output_path'] = '/covid/outputs/sd_zip_rt.xlsx'
+config['patient_path'] = '/covid/inputs/patients.20200611.csv'
+#####################
+
+print("    - done\n==================================")
+print("Read YAML Config...")
+
+with open("/covid/inputs/config.yaml") as file:
+    yaml_config = yaml.full_load(file)
+    for key, value in yaml_config.items():
+        config[key] = value
+
+# Convert to timestamps
+if config['dates_to_do']:
+    config['dates_to_do'] = pd.to_datetime(config['dates_to_do'])
+else:
+    config['dates_to_do'] = pd.to_datetime([])
+
+# Zip codes need to be integers
+if config['zipcodes_to_do']:
+    config['zipcodes_to_do'] = [int(x) for x in config['zipcodes_to_do'] ]
+
+
+print("    - done\n==================================")
+print("Configuration:")
+
+pprint.pprint(config)
+
+print("\n==================================")
+print("Reading remote CSV...")
+
+zips = pd.read_csv(config['zip_url'])
+
+print("    - done\n==================================")
+print("Clean up dataframe...")
+
+zips['date'] = zips['updatedate'].apply(lambda x: pd.to_datetime(x.split(" ")[0]))
+
+zips.drop(inplace=True, columns=['X',
+                                 'Y',
+                                 'FID',
+                                 'zipcode_zip',
+                                 'created_date',
+                                 'updatedate',
+                                 'created_date', 
+                                 'created_user', 
+                                 'last_edited_date', 
+                                 'last_edited_user',
+                                 'globalid'])
+
+zips.rename(columns={'ziptext': 'zipcode','case_count': 'positive'}, inplace=True)
+
+zips = zips.set_index(['zipcode', 'date']).sort_index()
+
+print("    - done\n==================================")
+print("Reading patient CSV...")
+patients = pd.read_csv(config['patient_path'],
+                       parse_dates=['Onset', 'Confirmed'],
+                       low_memory=False)
+
+print("    - done\n==================================")
+print("Calculating p_delay...")
+
+# Calculate the delta in days between onset and confirmation
+delay = (patients.Confirmed - patients.Onset).dt.days
+
+# Convert samples to an empirical distribution
+p_delay = delay.value_counts().sort_index()
+new_range = np.arange(0, p_delay.index.max()+1)
+p_delay = p_delay.reindex(new_range, fill_value=0)
+p_delay /= p_delay.sum()
+
+print("    - done\n==================================")
+print("Running Model code for each zip, this takes a while...\n")
+
 models = {}
 
 for zipcode, grp in zips.groupby('zipcode'):
    
-    if zipcode > 91906:
+    # Skip zipcodes not in config
+    if config['zipcodes_to_do'] and zipcode not in config['zipcodes_to_do']:
+        print(f'    - Skipping {zipcode}, not in list to do')
         continue
  
     print(zipcode)
     if zipcode in models:
-        print(f'Skipping {zipcode}, already in cache')
+        print(f'    - Skipping {zipcode}, already in cache')
         continue
     
     if zips.loc[zipcode].isnull().all().bool():
-        print(f'Skipping {zipcode}, all values null')
+        print(f'    - Skipping {zipcode}, all values null')
         continue
    
+    print(f'    - {zipcode}....')
     try: 
         models[zipcode] = create_and_run_model(zipcode, grp.droplevel(0))
     except:
-        print(f'Skipping {zipcode} due to error')
+        print(f'!!ERROR - Model code failed, skipping...')
+
+print("    - done\n==================================")
+print("Checking for divergences, not sure this does anything...")
 
 # Check to see if there were divergences
 n_diverging = lambda x: x.trace['diverging'].nonzero()[0].size
 divergences = pd.Series([n_diverging(m) for m in models.values()], index=models.keys())
 has_divergences = divergences.gt(0)
 
-print('Diverging zipcodes:')
-print(divergences[has_divergences])
+if divergences[has_divergences].empty:
+    print('No divergences found...')
+else:
+    print('Found divergences... they will rerun now')
 
 # Rerun zipcodes with divergences
 for zipcode, n_divergences in divergences[has_divergences].items():
+    print(f'    - Running {zipcode} again due to divergence')
     models[zipcode].run()
+
+print("    - done\n==================================")
+print("Converting results to dataframe")
 
 results = None
 
@@ -236,12 +311,16 @@ for zipcode, model in models.items():
         results = pd.concat([results, df], axis=0)
 
 
-#results.to_csv('/covid/outputs/sd_zip_rt.csv')
 
-output_file = '/covid/outputs/sd_zip_rt.xlsx'
-print(f"Writing results to {output_file}")
-with pd.ExcelWriter(output_file) as writer:
+print("    - done\n==================================")
+print("Writing output to %s..."%(config['output_path']))
+
+with pd.ExcelWriter(config['output_path']) as writer:
     for i in pd.unique(results.reset_index()['region']):
-        results.loc[i].to_excel(writer, sheet_name=str(i))
+        if config['dates_to_do'].empty:
+            results.loc[i].to_excel(writer, sheet_name=str(i))
+        else:
+            results.loc[i].loc[config['dates_to_do']].to_excel(writer, sheet_name=str(i))
 
+print("    - done\n==================================")
 print("That's all folks...")
