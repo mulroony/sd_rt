@@ -192,7 +192,10 @@ def create_and_run_model(name, state):
 models = {}
 
 for zipcode, grp in zips.groupby('zipcode'):
-    
+   
+    if zipcode > 91906:
+        continue
+ 
     print(zipcode)
     if zipcode in models:
         print(f'Skipping {zipcode}, already in cache')
@@ -221,6 +224,8 @@ for zipcode, n_divergences in divergences[has_divergences].items():
 
 results = None
 
+
+print("Converting model results to dataframe")
 for zipcode, model in models.items():
 
     df = df_from_model(model)
@@ -232,6 +237,11 @@ for zipcode, model in models.items():
 
 
 #results.to_csv('/covid/outputs/sd_zip_rt.csv')
-with pd.ExcelWriter('/covid/outputs/sd_zip_rt.xlsx') as writer:
+
+output_file = '/covid/outputs/sd_zip_rt.xlsx'
+print(f"Writing results to {output_file}")
+with pd.ExcelWriter(output_file) as writer:
     for i in pd.unique(results.reset_index()['region']):
         results.loc[i].to_excel(writer, sheet_name=str(i))
+
+print("That's all folks...")
