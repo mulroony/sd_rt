@@ -7,7 +7,8 @@ Version of rt.live calc for SD
 git clone git@github.com:mulroony/sd_rt.git
 cd sd_rt
 docker build  -t sd_covid:20200611 -f Dockerfile .
-docker run -v `pwd`/outputs:/covid/outputs -it sd_covid:20200611
+# Edit inputs/config.yaml
+docker run -v `pwd`/outputs:/covid/outputs -v `pwd`/inputs:/covid/inputs -it sd_covid:20200611
 ```
 
  Will generate XLSX file with a sheet per zip code
